@@ -42,7 +42,8 @@ external delannot : opaque -> slinkindex -> unit = "ml_delannot";;
 external hasunsavedchanges : unit -> bool = "ml_hasunsavedchanges";;
 external savedoc : string -> unit = "ml_savedoc";;
 external getannotcontents : opaque -> slinkindex -> string
-  = "ml_getannotcontents";;
+    = "ml_getannotcontents";;
+external unitstomm : opaque -> int -> float = "ml_unitstomm";;
 
 let reeenterhist = ref false;;
 let selfexec = ref E.s;;
@@ -3104,7 +3105,7 @@ object (self)
     | Mpan _
     | Mscrollx
     | Mzoom _
-    | Mzoomrect _
+    | Mrect _
     | Mnone -> coe self
 
   method pmotion x y =
@@ -4853,7 +4854,7 @@ let viewkeyboard key mask =
 
   | @escape | @q ->
       begin match state.mstate with
-      | Mzoomrect _ ->
+      | Mrect _ ->
           resetmstate ();
           G.postRedisplay "kill rect";
       | Msel _
@@ -5610,7 +5611,7 @@ let scrollindicator () =
 
 let showsel () =
   match state.mstate with
-  | Mnone | Mscrolly | Mscrollx | Mpan _ | Mzoom _ | Mzoomrect _ ->
+  | Mnone | Mscrolly | Mscrollx | Mpan _ | Mzoom _ | Mrect _ ->
       ()
 
   | Msel ((x0, y0), (x1, y1)) ->
@@ -5682,12 +5683,28 @@ let display () =
   postloop 0 state.layout;
   state.uioh#display;
   begin match state.mstate with
-  | Mzoomrect ((x0, y0), (x1, y1)) ->
+  | Mrect (Zoom, (x0, y0), (x1, y1)) ->
       Gl.enable `blend;
       GlDraw.color (0.3, 0.3, 0.3) ~alpha:0.5;
       GlFunc.blend_func ~src:`src_alpha ~dst:`one_minus_src_alpha;
       filledrect (float x0) (float y0) (float x1) (float y1);
       Gl.disable `blend;
+  | Mrect (Plain, (x0, y0), (x1, y1)) ->
+      Gl.enable `blend;
+      GlDraw.color (0.7, 0.7, 0.7) ~alpha:0.5;
+      GlFunc.blend_func ~src:`src_alpha ~dst:`one_minus_src_alpha;
+      filledrect (float x0) (float y0) (float x1) (float y1);
+      Gl.disable `blend;
+      begin match unproject x0 y0, unproject x1 y1 with
+      | Some (opaque0, _, ux0, uy0),
+        Some (opaque1, _, ux1, uy1) when opaque0=opaque1 ->
+          let w = abs (ux1 - ux0)
+          and h = abs (uy1 - uy0) in
+          state.text <- Printf.sprintf "%dx%d units %.2fx%.2f mm"
+              w h
+              (unitstomm opaque0 w) (unitstomm opaque0 h);
+      | _ -> ()
+      end;
   | Msel _
   | Mpan _
   | Mscrolly | Mscrollx
@@ -5857,7 +5874,7 @@ let viewmouse button down x y mask =
         | Msel _
         | Mpan _
         | Mscrolly | Mscrollx
-        | Mzoomrect _
+        | Mrect _
         | Mnone -> state.mstate <- Mzoom (n, 0)
       )
       else (
@@ -5919,18 +5936,24 @@ let viewmouse button down x y mask =
         )
         else
           let p = (x, y) in
-          Wsi.setcursor Wsi.CURSOR_CYCLE;
-          state.mstate <- Mzoomrect (p, p)
+          if Wsi.withmeta mask
+          then
+            state.mstate <- Mrect (Plain, p, p)
+          else (
+            Wsi.setcursor Wsi.CURSOR_CYCLE;
+            state.mstate <- Mrect (Zoom, p, p)
+           )
       )
       else (
         match state.mstate with
-        | Mzoomrect ((x0, y0), _) ->
+        | Mrect (Zoom, (x0, y0), _) ->
             if abs (x-x0) > 10 && abs (y - y0) > 10
             then zoomrect x0 y0 x y
             else (
               resetmstate ();
               G.postRedisplay "kill accidental zoom rect";
             )
+        | Mrect (Plain, _, _)
         | Msel _
         | Mpan _
         | Mscrolly | Mscrollx
@@ -5992,8 +6015,12 @@ let viewmouse button down x y mask =
             | Mzoom _ | Mscrollx | Mscrolly ->
                 state.mstate <- Mnone
 
-            | Mzoomrect ((x0, y0), _) ->
+            | Mrect (Zoom, (x0, y0), _) ->
                 zoomrect x0 y0 x y
+
+            | Mrect (Plain, _, _) ->
+                Wsi.setcursor Wsi.CURSOR_INHERIT;
+                state.mstate <- Mnone
 
             | Mpan _ ->
                 Wsi.setcursor Wsi.CURSOR_INHERIT;
@@ -6132,9 +6159,9 @@ let uioh = object
             let x = min state.winw (max 0 x) in
             scrollx x
 
-        | Mzoomrect (p0, _) ->
-            state.mstate <- Mzoomrect (p0, (x, y));
-            G.postRedisplay "motion zoomrect";
+        | Mrect (rty, p0, _) ->
+            state.mstate <- Mrect (rty, p0, (x, y));
+            G.postRedisplay "motion rect";
     end;
     state.uioh
 
@@ -6164,7 +6191,7 @@ let uioh = object
     | LinkNav _
     | View ->
         match state.mstate with
-        | Mpan _ | Msel _ | Mzoom _ | Mscrolly | Mscrollx | Mzoomrect _ -> ()
+        | Mpan _ | Msel _ | Mzoom _ | Mscrolly | Mscrollx | Mrect _ -> ()
         | Mnone ->
             updateunder x y;
             if canselect ()

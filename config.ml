@@ -338,10 +338,11 @@ and mstate =
     | Mpan of mpos
     | Mscrolly | Mscrollx
     | Mzoom of (buttonno * step)
-    | Mzoomrect of (mpos * mpos)
+    | Mrect of (rectty * mpos * mpos)
     | Mnone
 and buttonno = int
 and step = int
+and rectty = | Zoom | Plain
 ;;
 
 type mode =

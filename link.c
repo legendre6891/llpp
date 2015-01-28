@@ -4518,6 +4518,20 @@ CAMLprim value ml_savedoc (value path_v)
     CAMLreturn (Val_unit);
 }
 
+CAMLprim value ml_unitstomm (value s_v, value dots_v)
+{
+    CAMLparam2 (s_v, dots_v);
+    double mm = 1.0;
+
+    if (state.type == DPDF) {
+        double dots = Int_val (dots_v);
+
+        mm = (dots / 72.0) * 25.4;
+    }
+
+    CAMLreturn (caml_copy_double (mm));
+}
+
 static void makestippletex (void)
 {
     const char pixels[] = "\xff\xff\0\0";
