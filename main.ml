@@ -4704,6 +4704,7 @@ let viewkeyboard key mask =
     G.postRedisplay "view:enttext"
   in
   let ctrl = Wsi.withctrl mask in
+  let shift = Wsi.withshift mask in
   let key = Wsi.keypadtodigitkey key in
   match key with
   | @Q -> exit 0
@@ -4955,7 +4956,7 @@ let viewkeyboard key mask =
       end
 
   | @space ->
-      nextpage ()
+      if shift then prevpage () else nextpage ()
 
   | @delete | @kpdelete ->                  (* delete *)
       prevpage ()
@@ -5061,7 +5062,7 @@ let viewkeyboard key mask =
         setcolumns View c a b;
         setzoom z
 
-  | @down | @up when ctrl && Wsi.withshift mask ->
+  | @down | @up when ctrl && shift ->
       let zoom, x = state.prevzoom in
       setzoom zoom;
       state.x <- x;
@@ -5077,7 +5078,7 @@ let viewkeyboard key mask =
               if ctrl
               then gotoy_and_clear_text (clamp ~-(state.winh/2))
               else (
-                if not (Wsi.withshift mask) && conf.presentation
+                if not shift && conf.presentation
                 then prevpage ()
                 else gotoghyll1 true (clamp (-conf.scrollstep))
               )
@@ -5097,7 +5098,7 @@ let viewkeyboard key mask =
               if ctrl
               then gotoy_and_clear_text (clamp (state.winh/2))
               else (
-                if not (Wsi.withshift mask) && conf.presentation
+                if not shift && conf.presentation
                 then nextpage ()
                 else gotoghyll1 true (clamp (conf.scrollstep))
               )
@@ -5796,7 +5797,7 @@ let viewmouse button down x y mask =
         panbound (state.x + (if n = 7 then -2 else 2) * conf.hscrollstep);
       gotoy_and_clear_text state.y
 
-  | 1 when Wsi.withshift mask ->
+  | 1 when shift ->
       state.mstate <- Mnone;
       if not down
       then (
@@ -5826,7 +5827,7 @@ let viewmouse button down x y mask =
   | 3 ->
       if down
       then (
-        if Wsi.withshift mask
+        if shift
         then (
           annot conf.annotinline x y;
           G.postRedisplay "addannot"
