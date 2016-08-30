@@ -4588,7 +4588,8 @@ let setautoscrollspeed step goingdown =
 let canpan () =
   match conf.columns with
   | Csplit _ -> true
-  | Csingle _ | Cmulti _ -> state.x != 0.0 || conf.zoom > 1.0
+  | Csingle _ | Cmulti _ ->
+     state.x <> 0.0 || conf.zoom > 1.0
 ;;
 
 let panbound x = bound x (~-.(float state.w)) (float state.winw);;
