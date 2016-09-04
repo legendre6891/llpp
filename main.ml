@@ -4776,37 +4776,30 @@ let viewkeyboard key mask =
       enttext (s, E.s, Some (onhist state.hists.pat),
               textentry, ondone (key = @slash), true)
 
-  | @plus | @kpplus | @equals when ctrl ->
+  | @plus | @kpplus ->
       let incr = if conf.zoom +. 0.01 > 0.1 then 0.1 else 0.01 in
       setzoom (conf.zoom +. incr)
 
-  | @plus | @kpplus ->
-      let ondone s =
-        let n =
-          try int_of_string s with exn ->
-            state.text <- Printf.sprintf "bad integer `%s': %s" s @@ exntos exn;
-            max_int
-        in
-        if n != max_int
-        then (
-          conf.pagebias <- n;
-          state.text <- "page bias is now " ^ string_of_int n;
-        )
-      in
-      enttext ("page bias: ", E.s, None, intentry, ondone, true)
+  | @equals when (not ctrl) ->
+      let incr = if conf.zoom +. 0.01 > 0.1 then 0.1 else 0.01 in
+      setzoom (conf.zoom +. incr)
 
-  | @minus | @kpminus when ctrl ->
-      let decr = if conf.zoom -. 0.1 < 0.1 then 0.01 else 0.1 in
-      setzoom (max 0.01 (conf.zoom -. decr))
+  | @equals when ctrl ->
+      showtext ' ' (describe_location ());
 
-  | @minus | @kpminus ->
+
+  | @minus when ctrl ->
       let ondone msg = state.text <- msg in
       enttext (
         "option [acfhilpstvxACFPRSZTISM]: ", E.s, None,
         optentry state.mode, ondone, true
       )
 
-  | @0 when ctrl ->
+  | @minus | @kpminus ->
+      let decr = if conf.zoom -. 0.1 < 0.1 then 0.01 else 0.1 in
+      setzoom (max 0.01 (conf.zoom -. decr))
+
+  | @0 ->
       if conf.zoom = 1.0
       then (
         state.x <- 0;
@@ -4955,14 +4948,17 @@ let viewkeyboard key mask =
           gotoghyll (getpagey l.pageno)
       end
 
-  | @space ->
-      if shift then prevpage () else nextpage ()
+  | @space when ctrl -> Wsi.fullscreen ()
+
+  | @space when (not ctrl) ->
+      if shift then
+        gotoghyll (clamp (pgscale (-state.winh)))
+        else
+        gotoghyll (clamp (pgscale state.winh))
 
   | @delete | @kpdelete ->                  (* delete *)
       prevpage ()
 
-  | @equals ->
-      showtext ' ' (describe_location ());
 
   | @w ->
       begin match state.layout with
@@ -5797,7 +5793,7 @@ let viewmouse button down x y mask =
         panbound (state.x + (if n = 7 then -2 else 2) * conf.hscrollstep);
       gotoy_and_clear_text state.y
 
-  | 1 when shift ->
+  | 1 when Wsi.withshift mask ->
       state.mstate <- Mnone;
       if not down
       then (
@@ -5827,7 +5823,7 @@ let viewmouse button down x y mask =
   | 3 ->
       if down
       then (
-        if shift
+        if Wsi.withshift mask
         then (
           annot conf.annotinline x y;
           G.postRedisplay "addannot"
