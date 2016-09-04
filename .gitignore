@@ -11,3 +11,4 @@ Build.hi
 mupdf
 test/
 *.swp
+.tramp_history

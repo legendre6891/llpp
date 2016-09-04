@@ -34,7 +34,7 @@
 #include <caml/memory.h>
 #include <caml/unixsupport.h>
 
-#if __GNUC__ < 5
+#if __GNUC__ < 5 && !defined __clang__
 /* At least gcc (Gentoo 4.9.3 p1.0, pie-0.6.2) 4.9.3 emits erroneous
    clobbered diagnostics */
 #pragma GCC diagnostic ignored "-Wclobbered"
@@ -644,25 +644,21 @@ static void trimctm (pdf_page *page, int pindex)
     fz_matrix ctm;
     struct pagedim *pdim = &state.pagedims[pindex];
 
+    if (!page) return;
     if (!pdim->tctmready) {
-        if (state.trimmargins) {
-            fz_rect realbox, mediabox;
-            fz_matrix rm, sm, tm, im, ctm1, page_ctm;
+        fz_rect realbox, mediabox;
+        fz_matrix rm, sm, tm, im, ctm1, page_ctm;
 
-            fz_rotate (&rm, -pdim->rotate);
-            fz_scale (&sm, 1, -1);
-            fz_concat (&ctm, &rm, &sm);
-            realbox = pdim->mediabox;
-            fz_transform_rect (&realbox, &ctm);
-            fz_translate (&tm, -realbox.x0, -realbox.y0);
-            fz_concat (&ctm1, &ctm, &tm);
-            pdf_page_transform (state.ctx, page, &mediabox, &page_ctm);
-            fz_invert_matrix (&im, &page_ctm);
-            fz_concat (&ctm, &im, &ctm1);
-        }
-        else {
-            ctm = fz_identity;
-        }
+        fz_rotate (&rm, -pdim->rotate);
+        fz_scale (&sm, 1, -1);
+        fz_concat (&ctm, &rm, &sm);
+        realbox = pdim->mediabox;
+        fz_transform_rect (&realbox, &ctm);
+        fz_translate (&tm, -realbox.x0, -realbox.y0);
+        fz_concat (&ctm1, &ctm, &tm);
+        pdf_page_transform (state.ctx, page, &mediabox, &page_ctm);
+        fz_invert_matrix (&im, &page_ctm);
+        fz_concat (&ctm, &im, &ctm1);
         pdim->tctm = ctm;
         pdim->tctmready = 1;
     }
@@ -908,7 +904,7 @@ static void initpdims (int wthack)
 #endif
 
     for (pageno = 0; pageno < cxcount; ++pageno) {
-        int rotate;
+        int rotate = 0;
         struct pagedim *p;
         fz_rect mediabox;
 
@@ -942,7 +938,7 @@ static void initpdims (int wthack)
                         pdf_page_transform (ctx, page, &mediabox, &page_ctm);
                         fz_invert_matrix (&ctm, &page_ctm);
                         pdf_run_page (ctx, page, dev, &fz_identity, NULL);
-                        fz_close_device (state.ctx, dev);
+                        fz_close_device (ctx, dev);
                         fz_drop_device (ctx, dev);
 
                         rect.x0 += state.trimfuzz.x0;
@@ -1037,7 +1033,6 @@ static void initpdims (int wthack)
                 fz_try (ctx) {
                     page = fz_load_page (ctx, state.doc, pageno);
                     fz_bound_page (ctx, page, &mediabox);
-                    rotate = 0;
                     if (state.trimmargins) {
                         fz_rect rect;
                         fz_device *dev;
@@ -1045,7 +1040,7 @@ static void initpdims (int wthack)
                         dev = fz_new_bbox_device (ctx, &rect);
                         dev->hints |= FZ_IGNORE_SHADE;
                         fz_run_page (ctx, page, dev, &fz_identity, NULL);
-                        fz_close_device (state.ctx, dev);
+                        fz_close_device (ctx, dev);
                         fz_drop_device (ctx, dev);
 
                         rect.x0 += state.trimfuzz.x0;
@@ -1483,7 +1478,7 @@ static void search (regex_t *re, int pageno, int y, int forward)
     found:
 
         sheet = fz_new_stext_sheet (state.ctx);
-        text = fz_new_stext_page (state.ctx);
+        text = fz_new_stext_page (state.ctx, &pdim->mediabox);
         tdev = fz_new_stext_device (state.ctx, sheet, text);
 
         page = fz_load_page (state.ctx, state.doc, pageno);
@@ -1835,7 +1830,7 @@ static void * mainloop (void UNUSED_ATTR *unused)
             char *nameddest;
             int rotate, off, h;
             unsigned int fitmodel;
-            pdf_document *pdf = pdf_specifics (state.ctx, state.doc);
+            pdf_document *pdf;
 
             printd ("clear");
             ret = sscanf (p + 9, " %d %u %d %n",
@@ -1844,6 +1839,7 @@ static void * mainloop (void UNUSED_ATTR *unused)
                 errx (1, "bad reqlayout line `%.*s' ret=%d", len, p, ret);
             }
             lock ("reqlayout");
+            pdf = pdf_specifics (state.ctx, state.doc);
             if (state.rotate != rotate || state.fitmodel != fitmodel) {
                 state.gen += 1;
             }
@@ -2135,11 +2131,11 @@ static void stipplerect (fz_matrix *m,
 
         w = p2->x - p1->x;
         h = p2->y - p1->y;
-        t = sqrtf (w*w + h*h) * .25f;
+        t = hypotf (w, h) * .25f;
 
         w = p3->x - p2->x;
         h = p3->y - p2->y;
-        s = sqrtf (w*w + h*h) * .25f;
+        s = hypotf (w, h) * .25f;
 
         texcoords[0] = 0; vertices[0] = p1->x; vertices[1] = p1->y;
         texcoords[1] = t; vertices[2] = p2->x; vertices[3] = p2->y;
@@ -2636,13 +2632,13 @@ CAMLprim value ml_postprocess (value ptr_v, value hlinks_v,
         goto done;
     }
 
-    ensureannots (page);
-
-    if (hlmask & 1) highlightlinks (page, xoff, yoff);
     if (trylock (__func__)) {
-        noff = 0;
+        noff = -1;
         goto done;
     }
+
+    ensureannots (page);
+    if (hlmask & 1) highlightlinks (page, xoff, yoff);
     if (hlmask & 2) {
         highlightslinks (page, xoff, yoff, noff, targ, tlen, hfsize);
         noff = page->slinkcount;
@@ -2701,9 +2697,8 @@ static struct annot *getannot (struct page *page, int x, int y)
 
             fz_bound_annot (state.ctx, a->annot, &rect);
             if (p.x >= rect.x0 && p.x <= rect.x1) {
-                if (p.y >= rect.y0 && p.y <= rect.y1) {
+                if (p.y >= rect.y0 && p.y <= rect.y1)
                     return a;
-                }
             }
         }
     }
@@ -2745,7 +2740,8 @@ static void ensuretext (struct page *page)
         fz_matrix ctm;
         fz_device *tdev;
 
-        page->text = fz_new_stext_page (state.ctx);
+        page->text = fz_new_stext_page (state.ctx,
+                                        &state.pagedims[page->pdimno].mediabox);
         page->sheet = fz_new_stext_sheet (state.ctx);
         tdev = fz_new_stext_device (state.ctx, page->sheet, page->text);
         ctm = pagectm (page);
@@ -2765,11 +2761,12 @@ CAMLprim value ml_find_page_with_links (value start_page_v, value dir_v)
     int i, dir = Int_val (dir_v);
     int start_page = Int_val (start_page_v);
     int end_page = dir > 0 ? state.pagecount : -1;
-    pdf_document *pdf = pdf_specifics (state.ctx, state.doc);
+    pdf_document *pdf;
 
     fz_var (end_page);
     ret_v = Val_int (0);
     lock (__func__);
+    pdf = pdf_specifics (state.ctx, state.doc);
     for (i = start_page + dir; i != end_page; i += dir) {
         int found;
 
@@ -2820,9 +2817,6 @@ CAMLprim value ml_findlink (value ptr_v, value dir_v)
 
     page = parse_pointer (__func__, s);
     ret_v = Val_int (0);
-    /* This is scary we are not taking locks here ensureslinks does
-       not modify state and given that we obtained the page it can not
-       disappear under us either */
     lock (__func__);
     ensureslinks (page);
 
@@ -3023,10 +3017,10 @@ CAMLprim value ml_getlink (value ptr_v, value n_v)
     char *s = String_val (ptr_v);
     struct slink *slink;
 
-    /* See ml_findlink for caveat */
-
     ret_v = Val_int (0);
     page = parse_pointer (__func__, s);
+
+    lock (__func__);
     ensureslinks (page);
     pdim = &state.pagedims[page->pdimno];
     slink = &page->slinks[Int_val (n_v)];
@@ -3041,6 +3035,7 @@ CAMLprim value ml_getlink (value ptr_v, value n_v)
         Field (tup_v, 0) = ptr_v;
         Field (tup_v, 1) = n_v;
     }
+    unlock (__func__);
 
     CAMLreturn (ret_v);
 }
@@ -3048,7 +3043,11 @@ CAMLprim value ml_getlink (value ptr_v, value n_v)
 CAMLprim value ml_getannotcontents (value ptr_v, value n_v)
 {
     CAMLparam2 (ptr_v, n_v);
-    pdf_document *pdf = pdf_specifics (state.ctx, state.doc);
+    pdf_document *pdf;
+    const char *contents = "";
+
+    lock (__func__);
+    pdf = pdf_specifics (state.ctx, state.doc);
     if (pdf) {
         char *s = String_val (ptr_v);
         struct page *page;
@@ -3056,13 +3055,11 @@ CAMLprim value ml_getannotcontents (value ptr_v, value n_v)
 
         page = parse_pointer (__func__, s);
         slink = &page->slinks[Int_val (n_v)];
-        CAMLreturn (caml_copy_string (
-                        pdf_annot_contents (state.ctx,
-                                            (pdf_annot *) slink->u.annot)));
+        contents = pdf_annot_contents (state.ctx,
+                                       (pdf_annot *) slink->u.annot);
     }
-    else {
-        CAMLreturn (caml_copy_string (""));
-    }
+    unlock (__func__);
+    CAMLreturn (caml_copy_string (contents));
 }
 
 CAMLprim value ml_getlinkcount (value ptr_v)
@@ -3082,10 +3079,10 @@ CAMLprim value ml_getlinkrect (value ptr_v, value n_v)
     struct page *page;
     struct slink *slink;
     char *s = String_val (ptr_v);
-    /* See ml_findlink for caveat */
 
     page = parse_pointer (__func__, s);
     ret_v = caml_alloc_tuple (4);
+    lock (__func__);
     ensureslinks (page);
 
     slink = &page->slinks[Int_val (n_v)];

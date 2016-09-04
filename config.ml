@@ -335,7 +335,7 @@ and mstate =
     | Msel of (mpos * mpos)
     | Mpan of mpos
     | Mscrolly | Mscrollx
-    | Mzoom of (buttonno * step)
+    | Mzoom of (buttonno * step * mpos)
     | Mzoomrect of (mpos * mpos)
     | Mnone
 and buttonno = int
@@ -387,8 +387,8 @@ type state =
     ; mutable errmsgs       : Buffer.t
     ; mutable newerrmsgs    : bool
     ; mutable w             : int
-    ; mutable x             : int
-    ; mutable y             : int
+    ; mutable x             : x
+    ; mutable y             : y
     ; mutable anchor        : anchor
     ; mutable ranchors      : (string * string * anchor * string) list
     ; mutable maxy          : int
@@ -1948,9 +1948,9 @@ let logcurrently = function
       dolog "Loading %d gen=%d curgen=%d" l.pageno gen state.gen
   | Tiling (l, pageopaque, colorspace, angle, gen, col, row, tilew, tileh) ->
       dolog
-        "Tiling %d[%d,%d] page=%s cs=%s angle"
+        "Tiling %d[%d,%d] page=%s cs=%s angle=%d"
         l.pageno col row (~> pageopaque)
-        (CSTE.to_string colorspace)
+        (CSTE.to_string colorspace) angle
       ;
       dolog "gen=(%d,%d) (%d,%d) tile=(%d,%d) (%d,%d)"
         angle gen conf.angle state.gen
