@@ -1479,7 +1479,7 @@ static void search (regex_t *re, int pageno, int y, int forward)
 
         sheet = fz_new_stext_sheet (state.ctx);
         text = fz_new_stext_page (state.ctx, &pdim->mediabox);
-        tdev = fz_new_stext_device (state.ctx, sheet, text);
+        tdev = fz_new_stext_device (state.ctx, sheet, text, 0);
 
         page = fz_load_page (state.ctx, state.doc, pageno);
         {
@@ -2743,7 +2743,7 @@ static void ensuretext (struct page *page)
         page->text = fz_new_stext_page (state.ctx,
                                         &state.pagedims[page->pdimno].mediabox);
         page->sheet = fz_new_stext_sheet (state.ctx);
-        tdev = fz_new_stext_device (state.ctx, page->sheet, page->text);
+        tdev = fz_new_stext_device (state.ctx, page->sheet, page->text, 0);
         ctm = pagectm (page);
         fz_run_display_list (state.ctx, page->dlist,
                              tdev, &ctm, &fz_infinite_rect, NULL);
@@ -3184,10 +3184,10 @@ CAMLprim value ml_whatsunder (value ptr_v, value x_v, value y_v)
                             fz_stext_style *style = span->text->style;
                             const char *n2 =
                                 style->font
-                                ? style->font->name
+                                ? fz_font_name (style->font)
                                 : "Span has no font name"
                                 ;
-                            FT_FaceRec *face = style->font->ft_face;
+                            FT_FaceRec *face = fz_font_ft_face (style->font);
                             if (face && face->family_name) {
                                 char *s;
                                 char *n1 = face->family_name;
@@ -4439,7 +4439,7 @@ CAMLprim value ml_addannot (value ptr_v, value x_v, value y_v,
         annot = pdf_create_annot (state.ctx, pdf,
                                   pdf_page_from_fz_page (state.ctx,
                                                          page->fzpage),
-                                  FZ_ANNOT_TEXT);
+                                  PDF_ANNOT_TEXT);
         p.x = Int_val (x_v);
         p.y = Int_val (y_v);
         pdf_set_annot_contents (state.ctx, pdf, annot, String_val (contents_v));
