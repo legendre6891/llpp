@@ -4783,7 +4783,10 @@ let viewkeyboard key mask =
   | @equals when (not ctrl) ->
       let incr = if conf.zoom +. 0.01 > 0.1 then 0.1 else 0.01 in
       setzoom (conf.zoom +. incr)
-
+  
+  | @equals when ctrl ->
+      showtext ' ' (describe_location ());
+      
   | @minus | @kpminus when ctrl ->
       let decr = if conf.zoom -. 0.1 < 0.1 then 0.01 else 0.1 in
       pivotzoom (max 0.01 (conf.zoom -. decr))
